@@ -28,7 +28,10 @@
   <main class="wrap">
     <header class="top">
       <h1>JamOrNot</h1>
-      <span id="updated" class="updated" aria-live="polite">Loading…</span>
+      <div class="top-right">
+        <span id="updated" class="updated" aria-live="polite">Loading…</span>
+        <button id="refresh" class="refresh" type="button" aria-label="Refresh now"><span class="refresh-icon" aria-hidden="true">↻</span> Refresh</button>
+      </div>
     </header>
 
     <section id="verdict" class="card verdict" aria-live="polite">
@@ -37,6 +40,11 @@
     </section>
 
     <div id="crossings"></div>
+
+    <details class="card how">
+      <summary>How to read these numbers</summary>
+      <div id="how-body"><p>Loading…</p></div>
+    </details>
 
     <footer class="foot">Estimates, not promises. Live cams via LTA. Refresh for fresher regret.<span id="attrib" hidden><br>Drive times © TomTom.</span></footer>
   </main>

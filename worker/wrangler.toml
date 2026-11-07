@@ -3,11 +3,22 @@ main = "worker.js"
 compatibility_date = "2026-10-01"
 
 # Recommended: serve the API from a custom domain on the same hostname as the
-# site, so the page can call /api/* directly and caches.default actually caches
-# (Cache API calls are a no-op on *.workers.dev).
+# site, so the page can call /api/* directly.
 # routes = [{ pattern = "causeway.example.com/api/*", zone_name = "example.com" }]
 
-# Secret (not stored here): wrangler secret put LTA_ACCOUNT_KEY
+# Secrets (not stored here): wrangler secret put LTA_ACCOUNT_KEY / TOMTOM_KEY
+
+# Cron: every 10 min the Worker fetches TomTom + LTA + one camera reading and
+# writes the result to KV. Page loads only read it.
+[triggers]
+crons = ["*/10 * * * *"]
+
+# Shared store for that result (one key, ≤144 writes/day; free tier is 1,000).
+# Create it once:  npx wrangler kv namespace create STORE
+# then paste the id it prints here.
+[[kv_namespaces]]
+binding = "STORE"
+id = "PASTE_KV_NAMESPACE_ID_HERE"
 
 # Workers AI (camera queue estimate). Free plan: 10,000 neurons/day.
 [ai]
