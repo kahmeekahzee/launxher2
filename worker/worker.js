@@ -58,7 +58,7 @@ const TOMTOM_ROUTES = {
     // Points must sit on the right carriageway or the route U-turns. ~10 km each,
     // via AYE ⇄ Second Link ⇄ Sultan Abu Bakar CIQ (Tanjung Kupang) ⇄ E3.
     to_jb: { from: "1.3260,103.6602", to: "1.38644,103.59258", via: "AYE → Second Link → Tanjung Kupang CIQ", checkpointMin: 10 },
-    to_sg: { from: "1.3880,103.5960", to: "1.33103,103.6551", via: "Tanjung Kupang CIQ → Second Link → AYE", checkpointMin: 10 },
+    to_sg: { from: "1.39125,103.59018", to: "1.33103,103.6551", via: "Tanjung Kupang CIQ → Second Link → AYE", checkpointMin: 10 },
   },
 };
 // Status from TomTom's traffic delay (minutes over free-flow).
