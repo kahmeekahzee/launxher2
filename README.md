@@ -1,6 +1,8 @@
-# Causeway Watch
+# JamOrNot
 
 Live traffic at the two Singapore–Malaysia crossings (Woodlands Causeway and Tuas Second Link), in both directions. It's a static site on Cloudflare Pages backed by one small Cloudflare Worker that serves JSON.
+
+The site is at <https://jamornot.pages.dev>. The Worker keeps its original name, `causeway-watch-api`, because renaming it would change the API's address.
 
 ```
 public/            static site (Cloudflare Pages)
@@ -71,7 +73,7 @@ Test it: `curl https://<worker-url>/api/summary`
 
 ### 3. Deploy the site to Pages
 ```sh
-npx wrangler pages deploy public --project-name causeway-watch
+npx wrangler pages deploy public --project-name jamornot
 ```
 Or connect this repo in the Cloudflare dashboard (Workers & Pages → Create → Pages → connect Git). Leave the build command empty and set the output directory to `public`.
 

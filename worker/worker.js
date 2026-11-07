@@ -1,4 +1,4 @@
-// Causeway Watch API: a single Cloudflare Worker.
+// JamOrNot API: a single Cloudflare Worker.
 // Endpoints: GET /api/cameras, GET /api/travel-times, GET /api/routes, GET /api/summary,
 //            GET /api/queue (latest camera queue readings, for calibration)
 // Caching: Cloudflare Cache API (caches.default) only. No KV.
