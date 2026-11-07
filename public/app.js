@@ -88,6 +88,7 @@
     const byId = Object.fromEntries(data.crossings.map((c) => [c.id, c]));
     $("#verdict").innerHTML = lines(pickVerdict(byId.tuas?.status, byId.woodlands?.status));
     $("#crossings").innerHTML = data.crossings.map(crossingHtml).join("");
+    $("#attrib").hidden = !data.crossings.some((c) => Object.values(c.directions).some((d) => d.source === "tomtom"));
   }
 
   function crossingHtml(c) {
