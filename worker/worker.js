@@ -50,12 +50,15 @@ const MOODS = { CLEAR: "chill", SLOW: "busy", JAM: "crowded", UNKNOWN: "mystery"
 //   checkpointMin: time spent inside immigration (not in any traffic data), added to the drive time
 const TOMTOM_ROUTES = {
   woodlands: {
-    to_jb: { from: "1.4121,103.7734", to: "1.4630,103.7640", via: "BKE (Mandai) → JB CIQ", checkpointMin: 10 },
-    to_sg: { from: "1.4800,103.7620", to: "1.4320,103.7760", via: "JB city → BKE past Woodlands", checkpointMin: 10 },
+    // Checked against OSM routing: ~9 km each, via BKE ⇄ Causeway ⇄ JB CIQ.
+    to_jb: { from: "1.41275,103.77133", to: "1.4630,103.7640", via: "BKE → Causeway → JB CIQ", checkpointMin: 10 },
+    to_sg: { from: "1.4800,103.7620", to: "1.4128,103.7722", via: "JB CIQ → Causeway → BKE", checkpointMin: 10 },
   },
   tuas: {
-    to_jb: { from: "1.3300,103.6440", to: "1.3880,103.6180", via: "AYE (Tuas) → Gelang Patah CIQ", checkpointMin: 10 },
-    to_sg: { from: "1.4050,103.6200", to: "1.3300,103.6440", via: "Gelang Patah → AYE (Tuas)", checkpointMin: 10 },
+    // Points must sit on the right carriageway or the route U-turns. ~10 km each,
+    // via AYE ⇄ Second Link ⇄ Sultan Abu Bakar CIQ (Tanjung Kupang) ⇄ E3.
+    to_jb: { from: "1.3260,103.6602", to: "1.38644,103.59258", via: "AYE → Second Link → Tanjung Kupang CIQ", checkpointMin: 10 },
+    to_sg: { from: "1.3880,103.5960", to: "1.33103,103.6551", via: "Tanjung Kupang CIQ → Second Link → AYE", checkpointMin: 10 },
   },
 };
 // Status from TomTom's traffic delay (minutes over free-flow).

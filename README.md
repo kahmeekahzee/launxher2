@@ -56,7 +56,7 @@ npx wrangler deploy
 ```
 Test it: `curl https://<worker-url>/api/summary`
 
-**Check the TomTom routes once.** Open `/api/routes`. Each route should be roughly 5–12 km. If one is much longer, a start or end point snapped to the wrong road: paste its `from`/`to` into Google Maps and move it in `TOMTOM_ROUTES`.
+**Check the TomTom routes once.** Open `/api/routes`. Each route should be roughly 8–12 km. If one is much longer, a start or end point snapped to the wrong road: paste its `from`/`to` into Google Maps and move it in `TOMTOM_ROUTES`.
 
 > **Caching needs a custom domain.** `caches.default` does nothing on `*.workers.dev`. The Worker also keeps an in-memory copy per instance, which limits upstream calls, but Cloudflare runs many instances, so on `workers.dev` you can still use more TomTom quota than expected. For real caching, add a domain on Cloudflare and uncomment the `routes` line in `wrangler.toml`, for example `causeway.example.com/api/*`.
 
