@@ -30,7 +30,7 @@ Caching uses the Cloudflare Cache API (`caches.default`). No KV.
 
 Each direction in `/api/summary` has a `source` field (`tomtom` or `lta`).
 
-**Camera queue estimate (prototype).** TomTom barely sees the stop-start crawl at the checkpoints, so a Workers AI vision model (`llama-3.2-11b-vision-instruct`) rates the queue each way on cameras 2701, 2702, 4712 and 4713, from 0 (free-flowing) to 4 (standstill). The level adds a range of minutes (`QUEUE_MINUTES`) to the drive time, and the page shows it as a range, e.g. `126–186 min est.`. It runs in the background: each `/api/summary` uses the latest readings and re-reads at most one stale camera after responding, so nobody waits on the model. Each camera is re-read at most every 15 min. Level 3+ makes the status JAM; level 2 makes it at least SLOW. `/api/queue` shows each camera's latest levels and the model's raw reply. The minute ranges are calibrated against one Saturday-evening reading, so treat them as a first guess.
+**Camera queue estimate (prototype).** TomTom barely sees the stop-start crawl at the checkpoints, so a Workers AI vision model (`llama-3.2-11b-vision-instruct`) rates the queue each way on cameras 2701, 2702, 4712 and 4713, from 0 (free-flowing) to 4 (standstill). The level adds a range of minutes (`QUEUE_MINUTES`) to the drive time, and the page shows it as a range, e.g. `126–186 min est.`. It runs in the background: each `/api/summary` uses the latest readings and re-reads at most one stale camera after responding, so nobody waits on the model. Each camera is re-read at most every 40 min (about 1.5 reads an hour). Level 3+ makes the status JAM; level 2 makes it at least SLOW. `/api/queue` shows each camera's latest levels and the model's raw reply. The minute ranges are calibrated against one Saturday-evening reading, so treat them as a first guess.
 
 **Things to tune**, all at the top of `worker/worker.js`:
 - `CAMERAS`: camera IDs and their direction
@@ -38,7 +38,7 @@ Each direction in `/api/summary` has a `source` field (`tomtom` or `lta`).
 - `THRESHOLDS`: the SLOW and JAM ratios (LTA)
 - `TOMTOM_ROUTES`: start/end points and `checkpointMin` per direction
 - `DELAY_THRESHOLDS_MIN`: SLOW and JAM delay in minutes (TomTom)
-- `QUEUE_CAMERAS`: which cameras to read, with a hint telling the model which lanes go which way
+- `QUEUE_CAMERAS`: which cameras to read, with a hint telling the model where each direction's lanes are in the frame
 - `QUEUE_MINUTES`: minutes added per queue level, `[low, high]`
 - `QUEUE_TTL`: how often each camera is re-read
 

@@ -73,10 +73,10 @@ const DELAY_THRESHOLDS_MIN = { slow: 10, jam: 30 };
 //   hint: tells the model which lanes are which direction (from the camera labels)
 const QUEUE_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
 const QUEUE_CAMERAS = {
-  "2701": { crossing: "woodlands", hint: "This is the Causeway bridge. Traffic in the lanes marked JOHOR is heading to Johor (to_jb). Traffic in the lanes marked WOODLANDS is heading into Singapore (to_sg)." },
-  "2702": { crossing: "woodlands", hint: "This is Woodlands Checkpoint. The lanes marked CAUSEWAY are heading to the Causeway and Johor (to_jb). The road marked BKE is heading into Singapore (to_sg)." },
-  "4712": { crossing: "tuas", hint: "This is the AYE expressway near Tuas. The lanes marked JOHOR are heading to the Tuas Checkpoint and Johor (to_jb); a queue may fill only the leftmost lanes. The lanes marked CITY are heading into Singapore (to_sg)." },
-  "4713": { crossing: "tuas", hint: "This is Tuas Checkpoint. The lanes marked JOHOR are heading to Johor (to_jb). The road marked AYE is heading into Singapore (to_sg)." },
+  "2701": { crossing: "woodlands", hint: "The Causeway bridge runs diagonally from bottom-left to top-right and has two carriageways. The carriageway on the upper-left side, next to the open water, carries traffic heading to Johor (to_jb). The carriageway on the lower-right side, next to the large pipes, carries traffic heading into Singapore (to_sg)." },
+  "2702": { crossing: "woodlands", hint: "Woodlands Checkpoint. The straight road in the left part of the image, under the green overhead sign, carries traffic into Singapore on the BKE (to_sg). The roads in the right half, including the curved elevated ramp, carry traffic towards the Causeway and Johor (to_jb)." },
+  "4712": { crossing: "tuas", hint: "The AYE expressway near Tuas. The wide carriageway in the left and centre of the image heads to Tuas Checkpoint and Johor (to_jb); its queue may fill only the leftmost lanes while the other lanes move, so rate the queue in its leftmost lanes. The carriageway on the far right, beyond the line of trees, heads into Singapore (to_sg)." },
+  "4713": { crossing: "tuas", hint: "Tuas Checkpoint. The road in the left half of the image carries traffic into Singapore on the AYE (to_sg). The lanes in the right part of the image carry traffic towards the checkpoint and Johor (to_jb)." },
 };
 // Minutes of queue to add per level, as [low, high]. Level 4 calibrated against
 // another app on Sat 7 Nov 17:06 (Woodlands to JB 124–184, Tuas 93–140).
@@ -84,11 +84,13 @@ const QUEUE_MINUTES = {
   woodlands: [[0, 5], [5, 15], [15, 40], [40, 90], [90, 150]],
   tuas: [[0, 5], [5, 15], [15, 35], [35, 70], [70, 120]],
 };
-// A camera is re-read at most once per QUEUE_TTL. Each read is ~10–35 neurons;
-// 4 cameras every 15 min stays roughly inside the 10,000/day free allocation.
+// A camera is re-read at most once per QUEUE_TTL (40 min ≈ 1.5 reads/hour).
+// 4 cameras ≈ 144 reads/day; at ~10–35 neurons each that is ~1,500–5,000 of the
+// 10,000 free neurons/day, leaving headroom because on *.workers.dev each
+// Cloudflare instance keeps its own readings and may re-read on its own.
 // Readings older than QUEUE_MAX_AGE are ignored.
-const QUEUE_TTL = 15 * 60;
-const QUEUE_MAX_AGE = 45 * 60;
+const QUEUE_TTL = 40 * 60;
+const QUEUE_MAX_AGE = 90 * 60;
 
 // routes: 4 TomTom calls per refresh. 180s ≈ 1,920 calls/day, inside the free tier.
 const TTL = { cameras: 60, travelTimes: 120, routes: 180, summary: 60 };
@@ -363,6 +365,7 @@ async function classifyCamera(env, cam, hint) {
   for (let i = 0; i < bytes.length; i++) image[i] = bytes[i];
   const prompt =
     `This is a live traffic camera image in Singapore. ${hint} ` +
+    "The two directions are often very different: judge each direction only from its own lanes. " +
     "Rate the vehicle queue in each direction: 0 = empty or free-flowing, 1 = busy but moving, " +
     "2 = dense and slow, 3 = packed, stop-and-go, 4 = bumper-to-bumper standstill filling the lanes. " +
     'Reply with only JSON, no other text: {"to_jb": <0-4>, "to_sg": <0-4>}';
@@ -378,7 +381,8 @@ async function classifyCamera(env, cam, hint) {
     out = await env.AI.run(QUEUE_MODEL, input);
   }
 
-  const text = String((out && out.response) || "");
+  // The binding auto-parses a JSON reply, so response may already be an object.
+  const text = typeof out?.response === "string" ? out.response : JSON.stringify(out?.response ?? "");
   const match = text.match(/\{[^{}]*\}/);
   if (!match) throw new Error(`no JSON in model reply: ${text.slice(0, 80)}`);
   const parsed = JSON.parse(match[0]);
