@@ -157,6 +157,25 @@
       <p class="how-small">Delay is the live drive time minus the same drive with no traffic. Cameras rate the queue 0 (free-flowing) to 4 (standstill); ${q.slow} counts as dense and ${q.jam}+ as packed. If live drive times are unavailable, LTA expressway times are used instead: SLOW from ${r.slow}× the normal time, JAM from ${r.jam}×.</p>`;
   }
 
+  // --- current date and time (Singapore), e.g. "Sat 7 Nov · 6:24 pm" --------
+
+  const SG = "Asia/Singapore";
+  const fmtDate = new Intl.DateTimeFormat("en-SG", { weekday: "short", day: "numeric", month: "short", timeZone: SG });
+  const fmtTime = new Intl.DateTimeFormat("en-SG", { hour: "numeric", minute: "2-digit", timeZone: SG });
+  const fmtIso = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: SG });
+
+  function clock() {
+    const d = new Date();
+    const p = Object.fromEntries(fmtDate.formatToParts(d).map((x) => [x.type, x.value]));
+    const text = `${p.weekday} ${p.day} ${p.month} · ${fmtTime.format(d)}`;
+    const el = $("#now");
+    if (el.textContent !== text) {
+      el.textContent = text;
+      // e.g. "2026-11-07 18:24" in Singapore time, for screen readers and tools.
+      el.dateTime = fmtIso.format(d).replace(", ", "T") + "+08:00";
+    }
+  }
+
   // --- "Updated Xm ago" = age of the data, not of the page load ----------------
 
   function tick() {
@@ -208,6 +227,8 @@
   load();
   setInterval(load, REFRESH_MS);
   setInterval(tick, 15_000);
+  clock();
+  setInterval(clock, 1000);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && Date.now() - lastOkAt > REFRESH_MS) load();
   });
