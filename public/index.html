@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
+  <!-- Where the Worker lives. Leave empty if the Worker is routed at /api/* on this same domain. -->
+  <meta name="api-base" content="">
+  <title>Causeway Watch</title>
+  <meta name="description" content="Live traffic at Woodlands Causeway and Tuas Second Link, both directions.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="wrap">
+    <header class="top">
+      <h1>Causeway Watch</h1>
+      <span id="updated" class="updated" aria-live="polite">Loading…</span>
+    </header>
+
+    <section id="verdict" class="card verdict" aria-live="polite">
+      <p class="verdict-line">Checking the roads…</p>
+      <p class="verdict-line">&nbsp;</p>
+    </section>
+
+    <div id="crossings"></div>
+
+    <footer class="foot">Estimates, not promises. Live cams via LTA. Refresh for fresher regret.</footer>
+  </main>
+
+  <dialog id="lightbox" class="lightbox">
+    <form method="dialog"><button class="close" aria-label="Close">✕</button></form>
+    <img id="lightbox-img" alt="">
+    <p id="lightbox-cap" class="lightbox-cap"></p>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+name = "causeway-watch-api"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+# Recommended: serve the API from a custom domain on the same hostname as the
+# site, so the page can call /api/* directly and caches.default actually caches
+# (Cache API calls are a no-op on *.workers.dev).
+# routes = [{ pattern = "causeway.example.com/api/*", zone_name = "example.com" }]
+
+# Secret (not stored here): wrangler secret put LTA_ACCOUNT_KEY
