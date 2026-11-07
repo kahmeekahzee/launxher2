@@ -8,3 +8,7 @@ compatibility_date = "2026-10-01"
 # routes = [{ pattern = "causeway.example.com/api/*", zone_name = "example.com" }]
 
 # Secret (not stored here): wrangler secret put LTA_ACCOUNT_KEY
+
+# Workers AI (camera queue estimate). Free plan: 10,000 neurons/day.
+[ai]
+binding = "AI"

@@ -105,7 +105,8 @@
   }
 
   function rowHtml(d) {
-    const eta = d.etaMinutes == null ? "–" : d.etaMinutes;
+    const range = d.etaLow != null && d.etaHigh != null && d.etaHigh > d.etaLow;
+    const eta = d.etaMinutes == null ? "–" : range ? `${d.etaLow}–${d.etaHigh}` : d.etaMinutes;
     const chip = d.status === "UNKNOWN" ? "N/A" : d.status;
     return `
       <div class="row">
@@ -113,7 +114,7 @@
           <div class="dir-label">${esc(d.label)}</div>
           <div class="dir-sub">${esc(d.subtitle)}</div>
         </div>
-        <div class="eta"><span class="eta-num">${eta}</span><span class="eta-unit">min est.</span></div>
+        <div class="eta"><span class="eta-num${range ? " range" : ""}">${eta}</span><span class="eta-unit">min est.</span></div>
         <span class="chip ${esc(d.status)}">${chip}</span>
       </div>`;
   }

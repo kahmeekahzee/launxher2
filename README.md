@@ -19,7 +19,8 @@ worker/            JSON API (Cloudflare Worker)
 | `GET /api/cameras` | data.gov.sg Traffic Images (cams 2701, 2702, 2704, 4703, 4712, 4713) | 60s |
 | `GET /api/travel-times` | LTA DataMall Estimated Travel Times, BKE + AYE only | 120s |
 | `GET /api/routes` | TomTom live-traffic drive time across each crossing (4 routes) | 180s |
-| `GET /api/summary` | both of the above, combined per crossing and direction | 60s |
+| `GET /api/summary` | all of the above, combined per crossing and direction | 60s |
+| `GET /api/queue` | latest camera queue readings (prototype, for calibration) | none |
 
 Caching uses the Cloudflare Cache API (`caches.default`). No KV.
 
@@ -29,12 +30,17 @@ Caching uses the Cloudflare Cache API (`caches.default`). No KV.
 
 Each direction in `/api/summary` has a `source` field (`tomtom` or `lta`).
 
+**Camera queue estimate (prototype).** TomTom barely sees the stop-start crawl at the checkpoints, so a Workers AI vision model (`llama-3.2-11b-vision-instruct`) rates the queue each way on cameras 2701, 2702, 4712 and 4713, from 0 (free-flowing) to 4 (standstill). The level adds a range of minutes (`QUEUE_MINUTES`) to the drive time, and the page shows it as a range, e.g. `126–186 min est.`. It runs in the background: each `/api/summary` uses the latest readings and re-reads at most one stale camera after responding, so nobody waits on the model. Each camera is re-read at most every 15 min. Level 3+ makes the status JAM; level 2 makes it at least SLOW. `/api/queue` shows each camera's latest levels and the model's raw reply. The minute ranges are calibrated against one Saturday-evening reading, so treat them as a first guess.
+
 **Things to tune**, all at the top of `worker/worker.js`:
 - `CAMERAS`: camera IDs and their direction
 - `ROUTES`: which segments to use (`farEnd` keywords), `baselineSegMin`, `offPeakEtaMin`
 - `THRESHOLDS`: the SLOW and JAM ratios (LTA)
 - `TOMTOM_ROUTES`: start/end points and `checkpointMin` per direction
 - `DELAY_THRESHOLDS_MIN`: SLOW and JAM delay in minutes (TomTom)
+- `QUEUE_CAMERAS`: which cameras to read, with a hint telling the model which lanes go which way
+- `QUEUE_MINUTES`: minutes added per queue level, `[low, high]`
+- `QUEUE_TTL`: how often each camera is re-read
 
 Verdict lines are in `VERDICTS` at the top of `public/app.js`.
 
@@ -45,6 +51,9 @@ Request a free API key at <https://datamall.lta.gov.sg> (Request for API Access)
 
 ### 1b. Get a TomTom key (optional, for better ETAs)
 Sign up at <https://developer.tomtom.com>, then copy the API key from your dashboard. The free tier covers this app: 4 routes every 3 minutes is about 1,920 calls a day. Check TomTom's current free limits.
+
+### 1c. Workers AI (for the camera queue estimate)
+Nothing to sign up for: `wrangler.toml` already has the `[ai]` binding, so `wrangler deploy` connects it. If you deploy from the dashboard instead, add a **Workers AI** binding named `AI` under the Worker's **Settings → Bindings**. The Worker accepts Meta's model licence automatically on first use. Usage counts against the free 10,000 neurons a day. On the Free plan, going over just pauses the estimate until the next day; on the Paid plan the extra is billed. You can watch usage in the dashboard under **AI → Workers AI**.
 
 ### 2. Deploy the Worker
 ```sh

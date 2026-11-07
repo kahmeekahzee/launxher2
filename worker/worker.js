@@ -1,5 +1,6 @@
 // Causeway Watch API: a single Cloudflare Worker.
-// Endpoints: GET /api/cameras, GET /api/travel-times, GET /api/routes, GET /api/summary
+// Endpoints: GET /api/cameras, GET /api/travel-times, GET /api/routes, GET /api/summary,
+//            GET /api/queue (latest camera queue readings, for calibration)
 // Caching: Cloudflare Cache API (caches.default) only. No KV.
 
 // ---------------------------------------------------------------------------
@@ -10,7 +11,8 @@
 // direction: "to_jb" | "to_sg"; crossing: key from ROUTES below.
 const CAMERAS = [
   { id: "2701", crossing: "woodlands", direction: "to_jb", name: "Woodlands Causeway (towards JB)" },
-  { id: "2702", crossing: "woodlands", direction: "to_sg", name: "Woodlands Checkpoint to BKE" },
+  // 2702 shows both ways, but its busy side is the Causeway-bound queue.
+  { id: "2702", crossing: "woodlands", direction: "to_jb", name: "Woodlands Checkpoint (Causeway-bound)" },
   { id: "2704", crossing: "woodlands", direction: "to_jb", name: "BKE to Woodlands Checkpoint" },
   { id: "4703", crossing: "tuas", direction: "to_jb", name: "Tuas Second Link (towards JB)" },
   { id: "4712", crossing: "tuas", direction: "to_jb", name: "AYE Tuas Ave 8 exit" },
@@ -64,6 +66,30 @@ const TOMTOM_ROUTES = {
 // Status from TomTom's traffic delay (minutes over free-flow).
 const DELAY_THRESHOLDS_MIN = { slow: 10, jam: 30 };
 
+// Camera queue estimate (PROTOTYPE, Workers AI vision). TomTom misses the
+// crawl at the checkpoints, so a vision model rates the queue each way on the
+// cameras below, 0–4, and the level adds a [low, high] range of minutes to the
+// drive time. Needs the AI binding (wrangler.toml). Off if env.AI is missing.
+//   hint: tells the model which lanes are which direction (from the camera labels)
+const QUEUE_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
+const QUEUE_CAMERAS = {
+  "2701": { crossing: "woodlands", hint: "This is the Causeway bridge. Traffic in the lanes marked JOHOR is heading to Johor (to_jb). Traffic in the lanes marked WOODLANDS is heading into Singapore (to_sg)." },
+  "2702": { crossing: "woodlands", hint: "This is Woodlands Checkpoint. The lanes marked CAUSEWAY are heading to the Causeway and Johor (to_jb). The road marked BKE is heading into Singapore (to_sg)." },
+  "4712": { crossing: "tuas", hint: "This is the AYE expressway near Tuas. The lanes marked JOHOR are heading to the Tuas Checkpoint and Johor (to_jb); a queue may fill only the leftmost lanes. The lanes marked CITY are heading into Singapore (to_sg)." },
+  "4713": { crossing: "tuas", hint: "This is Tuas Checkpoint. The lanes marked JOHOR are heading to Johor (to_jb). The road marked AYE is heading into Singapore (to_sg)." },
+};
+// Minutes of queue to add per level, as [low, high]. Level 4 calibrated against
+// another app on Sat 7 Nov 17:06 (Woodlands to JB 124–184, Tuas 93–140).
+const QUEUE_MINUTES = {
+  woodlands: [[0, 5], [5, 15], [15, 40], [40, 90], [90, 150]],
+  tuas: [[0, 5], [5, 15], [15, 35], [35, 70], [70, 120]],
+};
+// A camera is re-read at most once per QUEUE_TTL. Each read is ~10–35 neurons;
+// 4 cameras every 15 min stays roughly inside the 10,000/day free allocation.
+// Readings older than QUEUE_MAX_AGE are ignored.
+const QUEUE_TTL = 15 * 60;
+const QUEUE_MAX_AGE = 45 * 60;
+
 // routes: 4 TomTom calls per refresh. 180s ≈ 1,920 calls/day, inside the free tier.
 const TTL = { cameras: 60, travelTimes: 120, routes: 180, summary: 60 };
 
@@ -94,6 +120,8 @@ export default {
           return json(await getRoutes(request, env, ctx), 200, TTL.routes);
         case "/api/summary":
           return json(await getSummary(request, env, ctx), 200, TTL.summary);
+        case "/api/queue":
+          return json(await getQueueReadings(request), 200, 0);
         default:
           return json({ error: "not found" }, 404);
       }
@@ -260,19 +288,167 @@ function estimateTomTom(base, cfg, r) {
   };
 }
 
+// --- camera queue estimate (Workers AI) ------------------------------------
+// Runs in the background: /api/summary uses the latest stored readings and,
+// via ctx.waitUntil, re-reads at most one stale camera per run, so no request
+// ever waits on the model. Readings live in the in-memory memo and the Cache API.
+
+const queueInFlight = new Set();
+const queueKey = (id) => `queue-v1-${id}`;
+
+async function loadQueueReading(request, id) {
+  const m = memo.get(queueKey(id));
+  if (m) return m.data;
+  const cache = globalThis.caches && globalThis.caches.default;
+  if (!cache) return null;
+  const hit = await cache.match(new Request(new URL(`/__cache/${queueKey(id)}`, request.url).toString()));
+  if (!hit) return null;
+  const data = await hit.json();
+  memo.set(queueKey(id), { data, expires: Infinity });
+  return data;
+}
+
+async function saveQueueReading(request, id, data) {
+  memo.set(queueKey(id), { data, expires: Infinity });
+  const cache = globalThis.caches && globalThis.caches.default;
+  if (cache) {
+    await cache.put(
+      new Request(new URL(`/__cache/${queueKey(id)}`, request.url).toString()),
+      new Response(JSON.stringify(data), { headers: { "cache-control": `public, max-age=${QUEUE_MAX_AGE}` } }),
+    );
+  }
+}
+
+async function getQueueReadings(request) {
+  const readings = {};
+  for (const id of Object.keys(QUEUE_CAMERAS)) readings[id] = await loadQueueReading(request, id);
+  return { model: QUEUE_MODEL, readings };
+}
+
+// Pick the camera whose reading is missing or oldest (past QUEUE_TTL) and re-read it.
+async function refreshOneQueueCamera(request, env, cameras, readings) {
+  const now = Date.now();
+  const due = Object.keys(QUEUE_CAMERAS)
+    .filter((id) => !queueInFlight.has(id) && cameras.some((c) => c.id === id))
+    .map((id) => ({ id, at: readings[id] ? Date.parse(readings[id].retryAt || readings[id].at) : 0 }))
+    .filter((x) => !readings[x.id] || (readings[x.id].retryAt ? now >= x.at : now - x.at >= QUEUE_TTL * 1000))
+    .sort((a, b) => a.at - b.at)[0];
+  if (!due) return;
+
+  queueInFlight.add(due.id);
+  try {
+    const cam = cameras.find((c) => c.id === due.id);
+    const reading = await classifyCamera(env, cam, QUEUE_CAMERAS[due.id].hint);
+    await saveQueueReading(request, due.id, reading);
+  } catch (err) {
+    // Keep the last good levels, note the error, retry in 2 minutes.
+    const prev = readings[due.id] || {};
+    await saveQueueReading(request, due.id, {
+      ...prev,
+      error: String(err && err.message || err).slice(0, 200),
+      retryAt: new Date(now + 2 * 60 * 1000).toISOString(),
+    });
+  } finally {
+    queueInFlight.delete(due.id);
+  }
+}
+
+async function classifyCamera(env, cam, hint) {
+  const img = await fetch(cam.imageUrl);
+  if (!img.ok) throw new Error(`camera image ${img.status}`);
+  // Preallocated loop: ~1 ms for a 220 KB image vs ~11 ms for [...bytes],
+  // which would blow the Workers Free plan's 10 ms CPU limit on its own.
+  const bytes = new Uint8Array(await img.arrayBuffer());
+  const image = new Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) image[i] = bytes[i];
+  const prompt =
+    `This is a live traffic camera image in Singapore. ${hint} ` +
+    "Rate the vehicle queue in each direction: 0 = empty or free-flowing, 1 = busy but moving, " +
+    "2 = dense and slow, 3 = packed, stop-and-go, 4 = bumper-to-bumper standstill filling the lanes. " +
+    'Reply with only JSON, no other text: {"to_jb": <0-4>, "to_sg": <0-4>}';
+  const input = { prompt, image, max_tokens: 60, temperature: 0 };
+
+  let out;
+  try {
+    out = await env.AI.run(QUEUE_MODEL, input);
+  } catch (err) {
+    // First use: Meta's licence must be accepted once by sending "agree".
+    if (!/agree|licen[cs]e/i.test(String(err && err.message || err))) throw err;
+    await env.AI.run(QUEUE_MODEL, { prompt: "agree" });
+    out = await env.AI.run(QUEUE_MODEL, input);
+  }
+
+  const text = String((out && out.response) || "");
+  const match = text.match(/\{[^{}]*\}/);
+  if (!match) throw new Error(`no JSON in model reply: ${text.slice(0, 80)}`);
+  const parsed = JSON.parse(match[0]);
+  const level = (v) => {
+    const n = Math.round(Number(v));
+    return Number.isFinite(n) ? Math.min(4, Math.max(0, n)) : null;
+  };
+  const to_jb = level(parsed.to_jb), to_sg = level(parsed.to_sg);
+  if (to_jb == null && to_sg == null) throw new Error(`unusable model reply: ${text.slice(0, 80)}`);
+  return { to_jb, to_sg, at: new Date().toISOString(), imageTimestamp: cam.timestamp, raw: text.slice(0, 200) };
+}
+
+// Worst fresh level per crossing and direction, e.g. { woodlands: { to_jb: 4 } }.
+function queueLevels(readings) {
+  const levels = {};
+  const now = Date.now();
+  for (const [id, r] of Object.entries(readings)) {
+    if (!r || !r.at || now - Date.parse(r.at) > QUEUE_MAX_AGE * 1000) continue;
+    const crossing = QUEUE_CAMERAS[id].crossing;
+    for (const dir of ["to_jb", "to_sg"]) {
+      if (r[dir] == null) continue;
+      const cur = levels[crossing] && levels[crossing][dir];
+      if (cur == null || r[dir] > cur) (levels[crossing] ||= {})[dir] = r[dir];
+    }
+  }
+  return levels;
+}
+
+// Turn the drive estimate into a [low, high] range using the queue level.
+function applyQueue(d, crossing, level) {
+  if (d.etaMinutes == null) return d;
+  if (level == null || !QUEUE_MINUTES[crossing]) return { ...d, etaLow: d.etaMinutes, etaHigh: d.etaMinutes, queueLevel: null };
+  // TomTom: drive time + queue replaces the fixed checkpointMin. LTA: its
+  // estimate already includes an off-peak crossing time, so add on top.
+  const base = d.source === "tomtom" ? d.driveMin : d.etaMinutes;
+  const [lo, hi] = QUEUE_MINUTES[crossing][level];
+  const queueStatus = level >= 3 ? "JAM" : level >= 2 ? "SLOW" : "CLEAR";
+  const status = worst(d.status, queueStatus);
+  return {
+    ...d,
+    etaLow: base + lo,
+    etaHigh: base + hi,
+    etaMinutes: Math.round(base + (lo + hi) / 2),
+    queueLevel: level,
+    status,
+    mood: MOODS[status],
+  };
+}
+
 // --- /api/summary ----------------------------------------------------------
 
 function getSummary(request, env, ctx) {
-  return cached(request, ctx, "summary-v2", TTL.summary, async () => {
-    const [cams, times, routesRes] = await Promise.allSettled([
+  return cached(request, ctx, "summary-v3", TTL.summary, async () => {
+    const [cams, times, routesRes, queueRes] = await Promise.allSettled([
       getCameras(request, ctx),
       getTravelTimes(request, env, ctx),
       env.TOMTOM_KEY ? getRoutes(request, env, ctx) : Promise.resolve(null),
+      getQueueReadings(request),
     ]);
     const cameras = cams.status === "fulfilled" ? cams.value.cameras : [];
     const segments = times.status === "fulfilled" ? times.value.segments : null;
     const routes = routesRes.status === "fulfilled" && routesRes.value ? routesRes.value.routes : {};
+    const readings = queueRes.status === "fulfilled" ? queueRes.value.readings : {};
+    const levels = queueLevels(readings);
     const routeErrors = [];
+
+    // Background: re-read one stale queue camera for the next summary.
+    if (env.AI && cameras.length) {
+      ctx.waitUntil(refreshOneQueueCamera(request, env, cameras, readings).catch(() => {}));
+    }
 
     const crossings = Object.entries(ROUTES).map(([id, route]) => {
       const directions = {};
@@ -286,6 +462,7 @@ function getSummary(request, env, ctx) {
           if (r && r.error) routeErrors.push(`${id}/${dir}: ${r.error}`);
           directions[dir] = estimate(route[dir], segments);
         }
+        directions[dir] = applyQueue(directions[dir], id, levels[id] && levels[id][dir]);
       }
       const status = worst(directions.to_jb.status, directions.to_sg.status);
       return {
@@ -305,7 +482,9 @@ function getSummary(request, env, ctx) {
       errors: [cams, times, routesRes]
         .filter((r) => r.status === "rejected")
         .map((r) => String(r.reason && r.reason.message || r.reason))
-        .concat(routeErrors),
+        .concat(routeErrors)
+        .concat(Object.entries(readings).filter(([, r]) => r && r.error).map(([id, r]) => `queue cam ${id}: ${r.error}`))
+        .concat(env.AI ? [] : ["AI binding not set: camera queue estimate off"]),
       crossings,
     };
   });

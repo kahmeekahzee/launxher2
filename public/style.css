@@ -103,6 +103,7 @@ body {
 
 .eta { text-align: right; white-space: nowrap; }
 .eta-num { font-size: 34px; font-weight: 750; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.eta-num.range { font-size: 26px; letter-spacing: -.02em; }
 .eta-unit { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
 
 .chip {
