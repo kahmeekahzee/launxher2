@@ -234,7 +234,12 @@ async function fetchRoute(cfg, key) {
     routeKm: Math.round(s.lengthInMeters / 100) / 10,
     driveMin: Math.round(s.travelTimeInSeconds / 60),
     freeFlowMin: Math.round((s.noTrafficTravelTimeInSeconds ?? s.travelTimeInSeconds) / 60),
-    delayMin: Math.round((s.trafficDelayInSeconds || 0) / 60),
+    // Delay = live travel time minus no-traffic time. TomTom's own
+    // trafficDelayInSeconds under-reports here (e.g. 1 min when drive is 31 vs 20).
+    delayMin: Number.isFinite(s.noTrafficTravelTimeInSeconds)
+      ? Math.max(0, Math.round((s.travelTimeInSeconds - s.noTrafficTravelTimeInSeconds) / 60))
+      : Math.round((s.trafficDelayInSeconds || 0) / 60),
+    tomtomDelayMin: Math.round((s.trafficDelayInSeconds || 0) / 60), // kept for comparison
   };
 }
 

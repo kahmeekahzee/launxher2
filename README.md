@@ -24,7 +24,7 @@ worker/            JSON API (Cloudflare Worker)
 Caching uses the Cloudflare Cache API (`caches.default`). No KV.
 
 **About the ETA:** it's an estimate, from one of two sources per direction:
-- **TomTom (preferred, when `TOMTOM_KEY` is set):** live drive time for a fixed route across the crossing, from the expressway on one side to past the checkpoint on the other. This includes the crawl on the bridge. `ETA = TomTom drive time + checkpointMin` (time inside immigration, which no traffic data sees). Status comes from TomTom's delay over free-flow traffic: `SLOW` from 10 min, `JAM` from 30 min.
+- **TomTom (preferred, when `TOMTOM_KEY` is set):** live drive time for a fixed route across the crossing, from the expressway on one side to past the checkpoint on the other. This includes the crawl on the bridge. `ETA = TomTom drive time + checkpointMin` (time inside immigration, which no traffic data sees). Status comes from the delay (TomTom live travel time minus its no-traffic time): `SLOW` from 10 min, `JAM` from 30 min.
 - **LTA (fallback):** if TomTom isn't set up or a route fails, the Worker adds up the BKE or AYE segment times and divides by an off-peak baseline: `ETA = offPeakEtaMin × max(1, now / baselineSegMin)`. Status is `CLEAR` below 1.3×, `SLOW` from 1.3×, `JAM` from 1.8×. This only sees the Singapore expressway, not the bridge or the checkpoints.
 
 Each direction in `/api/summary` has a `source` field (`tomtom` or `lta`).
